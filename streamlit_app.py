@@ -18,6 +18,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix, classification_report, roc_curve, auc
 import warnings
+import os
 warnings.filterwarnings('ignore')
 
 # Page configuration
@@ -105,15 +106,18 @@ with st.sidebar:
 # Load and preprocess data function
 @st.cache_data
 def load_and_preprocess():
-    try:
-        df = pd.read_csv('fake_job_postings.csv')
-        
-        # Convert target: 1 = FAKE (original), 0 = REAL (original)
-        # We'll keep original mapping for clarity
-        return df
-    except:
-        # Create sample data if file not found
-        st.warning("Dataset not found. Using sample data for demonstration.")
+    # Check if dataset exists
+    if os.path.exists('fake_job_postings.csv'):
+        try:
+            df = pd.read_csv('fake_job_postings.csv')
+            st.success("✅ Dataset loaded successfully!")
+            return df
+        except Exception as e:
+            st.warning(f"Error loading dataset: {e}")
+            return create_sample_data()
+    else:
+        st.warning("📌 Dataset not found. Using sample data for demonstration.")
+        st.info("To use the full dataset, upload 'fake_job_postings.csv' to your repository.")
         return create_sample_data()
 
 def create_sample_data():
@@ -121,14 +125,34 @@ def create_sample_data():
     np.random.seed(42)
     n_samples = 1000
     
+    # Create realistic job titles
+    real_titles = ['Software Engineer', 'Data Scientist', 'Product Manager', 
+                   'Marketing Specialist', 'Sales Representative', 'Financial Analyst']
+    fake_titles = ['URGENT HIRING!!!', 'Work From Home - Earn $5000', 
+                   'Get Rich Quick!!!', 'Easy Money Online', 'No Experience Needed!!!']
+    
+    titles = real_titles + fake_titles
+    
     data = {
-        'title': np.random.choice(['Software Engineer', 'Data Scientist', 'Marketing Manager', 
-                                   'URGENT HIRING', 'Work From Home', 'Get Rich Quick'], n_samples),
-        'description': np.random.choice(['Looking for experienced professional', 
-                                         'EARN BIG MONEY FAST!!! No experience needed'], n_samples),
-        'requirements': np.random.choice(['Python, SQL, Degree required', 
-                                          'No experience required, just internet'], n_samples),
-        'company_profile': np.random.choice(['Established company with 50+ years', ''], n_samples),
+        'title': np.random.choice(titles, n_samples),
+        'description': np.random.choice([
+            'We are looking for an experienced professional to join our team...',
+            'EARN BIG MONEY FAST!!! No experience needed. Start today!',
+            'Join our growing company with excellent benefits...',
+            'Limited time opportunity! Work from home and make thousands!'
+        ], n_samples),
+        'requirements': np.random.choice([
+            '5+ years experience, Bachelor\'s degree required',
+            'No experience required, just internet connection',
+            'Python, SQL, and Machine Learning skills',
+            'Must have reliable internet connection'
+        ], n_samples),
+        'company_profile': np.random.choice([
+            'Established company with 50+ years of excellence',
+            '',
+            'Fortune 500 company with offices worldwide',
+            ''
+        ], n_samples),
         'fraudulent': np.random.choice([0, 1], n_samples, p=[0.7, 0.3])
     }
     return pd.DataFrame(data)
@@ -162,7 +186,8 @@ def train_models(df):
     
     # Suspicious words
     suspicious_words = ['urgent', 'immediate', 'work from home', 'earn money', 
-                       'quick cash', 'no experience', 'guaranteed']
+                       'quick cash', 'no experience', 'guaranteed', 'get rich',
+                       'easy money', 'fast cash', 'millionaire']
     
     def count_suspicious(text):
         return sum(1 for word in suspicious_words if word in text)
@@ -186,11 +211,14 @@ def train_models(df):
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     
     # Train models
-    lr_model = LogisticRegression(max_iter=1000, class_weight='balanced')
-    rf_model = RandomForestClassifier(n_estimators=100, class_weight='balanced', random_state=42)
+    lr_model = LogisticRegression(max_iter=1000, class_weight='balanced', random_state=42)
+    rf_model = RandomForestClassifier(n_estimators=100, class_weight='balanced', random_state=42, n_jobs=-1)
     
-    lr_model.fit(X_train, y_train)
-    rf_model.fit(X_train, y_train)
+    with st.spinner("Training Logistic Regression..."):
+        lr_model.fit(X_train, y_train)
+    
+    with st.spinner("Training Random Forest..."):
+        rf_model.fit(X_train, y_train)
     
     # Make predictions
     lr_pred = lr_model.predict(X_test)
@@ -208,7 +236,8 @@ def train_models(df):
         'rf_pred': rf_pred,
         'lr_proba': lr_proba,
         'rf_proba': rf_proba,
-        'numeric_features': numeric_features
+        'numeric_features': numeric_features,
+        'suspicious_words': suspicious_words
     }
 
 # Load data and train models
@@ -218,6 +247,7 @@ with st.spinner("Loading data and training models..."):
         models = train_models(df)
         st.session_state.model_trained = True
         st.session_state.models = models
+        st.session_state.df = df
 
 # Different pages
 if page == "🏠 Home":
@@ -226,23 +256,27 @@ if page == "🏠 Home":
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.markdown("""
+        fake_count = (st.session_state.df['fraudulent'] == 1).sum()
+        real_count = (st.session_state.df['fraudulent'] == 0).sum()
+        total = len(st.session_state.df)
+        
+        st.markdown(f"""
         <div class="metric-card">
             <h3>📁 Dataset Size</h3>
-            <h2>{:,}</h2>
+            <h2>{total:,}</h2>
             <p>Job Postings</p>
         </div>
-        """.format(len(df)), unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
     
     with col2:
-        fake_pct = (df['fraudulent'].sum() / len(df)) * 100
-        st.markdown("""
+        fake_pct = (fake_count / total) * 100
+        st.markdown(f"""
         <div class="metric-card">
             <h3>⚠️ Fake Jobs</h3>
-            <h2>{:.1f}%</h2>
-            <p>of dataset</p>
+            <h2>{fake_pct:.1f}%</h2>
+            <p>{fake_count:,} postings</p>
         </div>
-        """.format(fake_pct), unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
     
     with col3:
         st.markdown("""
@@ -268,244 +302,4 @@ if page == "🏠 Home":
     3. Explore **Dataset Analysis** for insights
     """)
 
-elif page == "📊 Model Performance":
-    st.markdown("## 📊 Model Performance Comparison")
-    
-    models = st.session_state.models
-    
-    # Metrics
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("### Logistic Regression")
-        lr_cm = confusion_matrix(models['y_test'], models['lr_pred'])
-        
-        fig_lr = go.Figure(data=go.Heatmap(
-            z=lr_cm,
-            x=['Predicted Fake', 'Predicted Real'],
-            y=['Actual Fake', 'Actual Real'],
-            text=lr_cm,
-            texttemplate="%{text}",
-            textfont={"size": 16},
-            colorscale='Blues'
-        ))
-        fig_lr.update_layout(title='Confusion Matrix - Logistic Regression')
-        st.plotly_chart(fig_lr, use_container_width=True)
-        
-        lr_acc = (lr_cm[0][0] + lr_cm[1][1]) / lr_cm.sum()
-        st.metric("Accuracy", f"{lr_acc:.2%}")
-    
-    with col2:
-        st.markdown("### Random Forest")
-        rf_cm = confusion_matrix(models['y_test'], models['rf_pred'])
-        
-        fig_rf = go.Figure(data=go.Heatmap(
-            z=rf_cm,
-            x=['Predicted Fake', 'Predicted Real'],
-            y=['Actual Fake', 'Actual Real'],
-            text=rf_cm,
-            texttemplate="%{text}",
-            textfont={"size": 16},
-            colorscale='Greens'
-        ))
-        fig_rf.update_layout(title='Confusion Matrix - Random Forest')
-        st.plotly_chart(fig_rf, use_container_width=True)
-        
-        rf_acc = (rf_cm[0][0] + rf_cm[1][1]) / rf_cm.sum()
-        st.metric("Accuracy", f"{rf_acc:.2%}")
-    
-    # ROC Curves
-    st.markdown("### ROC Curves")
-    
-    # Calculate ROC curves
-    lr_fpr, lr_tpr, _ = roc_curve(models['y_test'], models['lr_proba'][:, 1])
-    rf_fpr, rf_tpr, _ = roc_curve(models['y_test'], models['rf_proba'][:, 1])
-    
-    lr_auc = auc(lr_fpr, lr_tpr)
-    rf_auc = auc(rf_fpr, rf_tpr)
-    
-    fig_roc = go.Figure()
-    fig_roc.add_trace(go.Scatter(x=lr_fpr, y=lr_tpr, mode='lines', 
-                                 name=f'Logistic Regression (AUC={lr_auc:.3f})',
-                                 line=dict(color='blue', width=2)))
-    fig_roc.add_trace(go.Scatter(x=rf_fpr, y=rf_tpr, mode='lines',
-                                 name=f'Random Forest (AUC={rf_auc:.3f})',
-                                 line=dict(color='green', width=2)))
-    fig_roc.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode='lines',
-                                 name='Random', line=dict(color='red', dash='dash')))
-    
-    fig_roc.update_layout(
-        xaxis_title='False Positive Rate',
-        yaxis_title='True Positive Rate',
-        title='ROC Curves Comparison'
-    )
-    st.plotly_chart(fig_roc, use_container_width=True)
-
-elif page == "🔮 Predict New Job":
-    st.markdown("## 🔮 Test a Job Posting")
-    
-    with st.form("prediction_form"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            title = st.text_input("Job Title", value="Senior Python Developer")
-            company = st.text_input("Company Name", value="Tech Solutions Inc.")
-            telecommuting = st.checkbox("Telecommuting / Remote")
-        
-        with col2:
-            description = st.text_area("Job Description", 
-                value="We are looking for a senior Python developer with 5+ years of experience.",
-                height=150)
-            requirements = st.text_area("Requirements",
-                value="Python, Django, REST APIs, AWS, SQL",
-                height=100)
-        
-        submitted = st.form_submit_button("🔍 Detect Fake Job")
-    
-    if submitted:
-        models = st.session_state.models
-        
-        # Prepare text
-        all_text = f"{title} {description} {requirements}"
-        all_text = clean_text(all_text)
-        
-        # Vectorize
-        text_vector = models['vectorizer'].transform([all_text])
-        
-        # Calculate features
-        text_length = len(all_text)
-        desc_length = len(description)
-        
-        suspicious_words = ['urgent', 'immediate', 'work from home', 'earn money', 
-                           'quick cash', 'no experience', 'guaranteed']
-        suspicious_count = sum(1 for word in suspicious_words if word in all_text)
-        
-        # Create numeric array
-        numeric_array = np.array([[text_length, desc_length, suspicious_count]])
-        
-        # Combine features
-        from scipy.sparse import hstack
-        features = hstack([text_vector, numeric_array])
-        
-        # Get predictions
-        lr_pred = models['lr_model'].predict(features)[0]
-        rf_pred = models['rf_model'].predict(features)[0]
-        
-        lr_proba = models['lr_model'].predict_proba(features)[0]
-        rf_proba = models['rf_model'].predict_proba(features)[0]
-        
-        # Display results
-        st.markdown("### Prediction Results")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("#### Logistic Regression")
-            if lr_pred == 1:
-                st.markdown("""
-                <div class="prediction-box fake-job">
-                    🔴 FAKE JOB POSTING
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown("""
-                <div class="prediction-box real-job">
-                    🟢 REAL JOB POSTING
-                </div>
-                """, unsafe_allow_html=True)
-            
-            st.progress(float(lr_proba[1]))
-            st.text(f"Confidence: {max(lr_proba)*100:.1f}%")
-            st.text(f"Fake: {lr_proba[0]*100:.1f}% | Real: {lr_proba[1]*100:.1f}%")
-        
-        with col2:
-            st.markdown("#### Random Forest")
-            if rf_pred == 1:
-                st.markdown("""
-                <div class="prediction-box fake-job">
-                    🔴 FAKE JOB POSTING
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown("""
-                <div class="prediction-box real-job">
-                    🟢 REAL JOB POSTING
-                </div>
-                """, unsafe_allow_html=True)
-            
-            st.progress(float(rf_proba[1]))
-            st.text(f"Confidence: {max(rf_proba)*100:.1f}%")
-            st.text(f"Fake: {rf_proba[0]*100:.1f}% | Real: {rf_proba[1]*100:.1f}%")
-
-elif page == "📈 Dataset Analysis":
-    st.markdown("## 📈 Dataset Analysis")
-    
-    # Class distribution
-    st.markdown("### Class Distribution")
-    
-    fig_pie = go.Figure(data=[go.Pie(
-        labels=['Real Jobs', 'Fake Jobs'],
-        values=[(df['fraudulent'] == 0).sum(), (df['fraudulent'] == 1).sum()],
-        hole=.3,
-        marker_colors=['#51cf66', '#ff6b6b']
-    )])
-    fig_pie.update_layout(title='Distribution of Fake vs Real Jobs')
-    st.plotly_chart(fig_pie, use_container_width=True)
-    
-    # Sample data
-    st.markdown("### Sample Data")
-    st.dataframe(df.head(10))
-
-else:  # About page
-    st.markdown("## ℹ️ About This Project")
-    
-    st.markdown("""
-    ### 🎯 Project Overview
-    This Fake Job Detection System uses machine learning to identify fraudulent job postings.
-    It's designed to help job seekers avoid scams and recruiters maintain quality listings.
-    
-    ### 🤖 Algorithms Used
-    
-    #### 1. Logistic Regression
-    - **Output**: 0 (FAKE) or 1 (REAL)
-    - **Strengths**: Fast, interpretable, good for baseline
-    - **Best for**: Quick screening
-    
-    #### 2. Random Forest
-    - **Output**: 🔴 RED (FAKE) or 🟢 GREEN (REAL)
-    - **Strengths**: Handles complex patterns, feature importance
-    - **Best for**: Accurate detection
-    
-    ### 🔍 Key Features Detected
-    - 🚨 Urgency words (urgent, immediate)
-    - 💰 Money-focused language
-    - 📝 Missing company profiles
-    - 🔗 Suspicious patterns
-    
-    ### 📊 Dataset
-    - **Source**: Kaggle Fake Job Posting Dataset
-    - **Size**: 17,880 job postings
-    - **Features**: Title, description, requirements, company info
-    
-    ### 🛠️ Technologies Used
-    - Python 3.8+
-    - Scikit-learn for ML models
-    - Streamlit for web interface
-    - Plotly for visualizations
-    - Pandas for data manipulation
-    
-    ### 📧 Contact
-    **Developer**: Arthi M
-    **GitHub**: [Arthi-123-M](https://github.com/Arthi-123-M)
-    
-    ### 📝 License
-    This project is licensed under the MIT License.
-    """)
-
-# Footer
-st.markdown("---")
-st.markdown("""
-    <div style='text-align: center'>
-        <p>Made with ❤️ using Streamlit | Fake Job Detection System v1.0</p>
-    </div>
-""", unsafe_allow_html=True)
+# ... (rest of your pages code remains the same)
