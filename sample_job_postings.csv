@@ -1,0 +1,21 @@
+import pandas as pd
+import os
+
+# Check if full dataset exists
+if os.path.exists('fake_job_postings.csv'):
+    # Read the full dataset
+    print("Reading full dataset...")
+    df = pd.read_csv('fake_job_postings.csv')
+    
+    # Take 5000 rows (should be under 25MB)
+    sample_df = df.head(5000)
+    
+    # Save as sample
+    sample_df.to_csv('sample_job_postings.csv', index=False)
+    
+    print(f"✅ Created sample dataset!")
+    print(f"   Original: {len(df)} rows")
+    print(f"   Sample: {len(sample_df)} rows")
+    print(f"   File size: ~{os.path.getsize('sample_job_postings.csv') / 1024 / 1024:.1f} MB")
+else:
+    print("❌ fake_job_postings.csv not found in current folder")
